@@ -182,5 +182,3 @@ ground_truth.csv
 .streamlit/secrets.toml
 
 uploads/
-
-encrypt.py
