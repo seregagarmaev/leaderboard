@@ -182,3 +182,5 @@ ground_truth.csv
 .streamlit/secrets.toml
 
 uploads/
+
+leaderboard.csv

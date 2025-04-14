@@ -13,12 +13,12 @@ teams_dict = load_teams_from_secrets()
 # Streamlit session state for login
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
-    st.session_state.team_id = None
+    st.session_state.team_name = None
 
 def login(team_id, password):
     if team_id in teams_dict and teams_dict[team_id] == password:
         st.session_state.logged_in = True
-        st.session_state.team_id = team_id
+        st.session_state.team_name = team_id
     else:
         st.error("Invalid team ID or password.")
 
@@ -31,36 +31,45 @@ if not st.session_state.logged_in:
         login(team_id, password)
     st.stop()
 
-# Load or initialize leaderboard
+# File to store full submission history
 leaderboard_file = "leaderboard.csv"
+
+# Load or initialize leaderboard
 if os.path.exists(leaderboard_file):
     lb_df = pd.read_csv(leaderboard_file)
-    required_cols = {"team_id", "score", "timestamp"}
+    required_cols = {"Team Name", "Score", "Submission Date"}
     if not required_cols.issubset(lb_df.columns):
-        lb_df = pd.DataFrame(columns=["team_id", "score", "timestamp"])
+        lb_df = pd.DataFrame(columns=["Team Name", "Score", "Submission Date"])
 else:
-    lb_df = pd.DataFrame(columns=["team_id", "score", "timestamp"])
+    lb_df = pd.DataFrame(columns=["Team Name", "Score", "Submission Date"])
 
-# Get submission count for today
-st.title("Submit Your Predictions")
+# Page title and instructions
+st.title("Graded Exercise 3")
+st.markdown(
+    """
+    This is the leaderboard for Graded Exercise 3.  
+    You are allowed to submit only twice per day.  
+    The evaluation metric is F1 score.
+    """
+)
+
+# Submission section
 today = datetime.now().strftime("%Y-%m-%d")
-team_id = st.session_state.team_id
+team_name = st.session_state.team_name
 submissions_today = lb_df[
-    (lb_df["team_id"] == team_id) &
-    (lb_df["timestamp"].str.startswith(today))
+    (lb_df["Team Name"] == team_name) &
+    (lb_df["Submission Date"].str.startswith(today))
 ]
 remaining_submissions = 2 - len(submissions_today)
 
-st.markdown(f"**Logged in as:** `{team_id}`")
-st.markdown(f"**Remaining submissions today:** {remaining_submissions}")
+st.markdown(f"**Logged in as:** `{team_name}`")
 
-# Upload and submit
 uploaded_file = st.file_uploader("Upload CSV prediction", type="csv")
 
 if uploaded_file and remaining_submissions > 0:
     # Safe filename
     safe_time = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    filename = f"{team_id}_{safe_time}.csv"
+    filename = f"{team_name}_{safe_time}.csv"
     filepath = os.path.join("uploads", filename)
     os.makedirs("uploads", exist_ok=True)
 
@@ -74,13 +83,14 @@ if uploaded_file and remaining_submissions > 0:
         if st.button("Submit to leaderboard"):
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             new_entry = pd.DataFrame({
-                "team_id": [team_id],
-                "score": [score],
-                "timestamp": [timestamp]
+                "Team Name": [team_name],
+                "Score": [score],
+                "Submission Date": [timestamp]
             })
             lb_df = pd.concat([lb_df, new_entry], ignore_index=True)
             lb_df.to_csv(leaderboard_file, index=False)
-            st.success("🎉 Submission recorded!")
+            st.success("Submission recorded!")
+            st.experimental_rerun()
 
     except EvaluationError as e:
         st.error(f"Submission error: {e}")
@@ -88,10 +98,16 @@ if uploaded_file and remaining_submissions > 0:
 elif uploaded_file and remaining_submissions <= 0:
     st.error("You have reached the submission limit for today (2 submissions).")
 
-# Leaderboard
+# Display full leaderboard (all submissions)
 st.subheader("Leaderboard")
+
 if not lb_df.empty:
-    lb_df = lb_df.sort_values(by="score", ascending=False).reset_index(drop=True)
-    st.dataframe(lb_df)
+    # Add Place column: sort all submissions from highest to lowest score
+    all_submissions_sorted = (
+        lb_df.sort_values("Score", ascending=False)
+        .reset_index(drop=True)
+    )
+    all_submissions_sorted.insert(0, "Place", range(1, len(all_submissions_sorted) + 1))
+    st.dataframe(all_submissions_sorted.style.hide(axis="index"), use_container_width=True)
 else:
     st.info("No submissions yet.")
