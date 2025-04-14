@@ -11,7 +11,7 @@ def evaluate_prediction(pred_path, ground_truth_path='ground_truth.csv'):
             raise EvaluationError("Uploaded file is not a CSV.")
 
         preds = pd.read_csv(pred_path)
-        truth = pd.read_csv(ground_truth_path)
+        truth = pd.read_csv("/mount/src/ground_truth.csv")
 
         if preds.empty:
             raise EvaluationError("Prediction file is empty.")

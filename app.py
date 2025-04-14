@@ -4,12 +4,11 @@ import os
 from datetime import datetime
 from evaluate import evaluate_prediction, EvaluationError
 
-# Load teams
-@st.cache_data
-def load_teams():
-    return pd.read_csv("teams.csv")
+def load_teams_from_secrets():
+    secrets = st.secrets["teams"]
+    return {team: secrets[team] for team in secrets}
 
-teams_df = load_teams()
+teams_dict = load_teams_from_secrets()
 
 # Streamlit session state for login
 if "logged_in" not in st.session_state:
@@ -17,8 +16,7 @@ if "logged_in" not in st.session_state:
     st.session_state.team_id = None
 
 def login(team_id, password):
-    team = teams_df[teams_df["team_id"] == team_id]
-    if not team.empty and team.iloc[0]["password"] == password:
+    if team_id in teams_dict and teams_dict[team_id] == password:
         st.session_state.logged_in = True
         st.session_state.team_id = team_id
     else:

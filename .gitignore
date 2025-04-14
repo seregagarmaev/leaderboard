@@ -174,3 +174,11 @@ cython_debug/
 .pypirc
 
 .idea
+
+teams.csv
+
+ground_truth.csv
+
+.streamlit/secrets.toml
+
+uploads/
