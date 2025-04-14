@@ -1,17 +1,35 @@
 import pandas as pd
 from sklearn.metrics import f1_score
+from cryptography.fernet import Fernet
+from io import BytesIO
+import streamlit as st
+
 
 class EvaluationError(Exception):
     """Custom exception for evaluation errors."""
     pass
 
-def evaluate_prediction(pred_path, ground_truth_path='ground_truth.csv'):
+
+def load_ground_truth_encrypted():
+    try:
+        with open("ground_truth.encrypted", "rb") as f:
+            encrypted = f.read()
+        key = st.secrets["encryption"]["key"]
+        cipher = Fernet(key.encode())
+        decrypted = cipher.decrypt(encrypted)
+        df = pd.read_csv(BytesIO(decrypted))
+        return df
+    except Exception as e:
+        raise EvaluationError(f"Failed to load ground truth: {e}")
+
+
+def evaluate_prediction(pred_path):
     try:
         if not pred_path.endswith(".csv"):
             raise EvaluationError("Uploaded file is not a CSV.")
 
         preds = pd.read_csv(pred_path)
-        truth = pd.read_csv("/mount/src/ground_truth.csv")
+        truth = load_ground_truth_encrypted()
 
         if preds.empty:
             raise EvaluationError("Prediction file is empty.")
