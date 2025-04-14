@@ -1,44 +1,99 @@
 import streamlit as st
 import pandas as pd
 import os
+from datetime import datetime
 from evaluate import evaluate_prediction, EvaluationError
 
-st.title("🧠 Deep Learning Project Submission")
+# Load teams
+@st.cache_data
+def load_teams():
+    return pd.read_csv("teams.csv")
 
-uploaded_file = st.file_uploader("Upload your predictions (CSV file)", type="csv")
+teams_df = load_teams()
 
-if uploaded_file:
-    # Save uploaded file
+# Streamlit session state for login
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.team_id = None
+
+def login(team_id, password):
+    team = teams_df[teams_df["team_id"] == team_id]
+    if not team.empty and team.iloc[0]["password"] == password:
+        st.session_state.logged_in = True
+        st.session_state.team_id = team_id
+    else:
+        st.error("Invalid team ID or password.")
+
+# Login form
+if not st.session_state.logged_in:
+    st.title("Team Login")
+    team_id = st.text_input("Team ID")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        login(team_id, password)
+    st.stop()
+
+# Load or initialize leaderboard
+leaderboard_file = "leaderboard.csv"
+if os.path.exists(leaderboard_file):
+    lb_df = pd.read_csv(leaderboard_file)
+    required_cols = {"team_id", "score", "timestamp"}
+    if not required_cols.issubset(lb_df.columns):
+        lb_df = pd.DataFrame(columns=["team_id", "score", "timestamp"])
+else:
+    lb_df = pd.DataFrame(columns=["team_id", "score", "timestamp"])
+
+# Get submission count for today
+st.title("Submit Your Predictions")
+today = datetime.now().strftime("%Y-%m-%d")
+team_id = st.session_state.team_id
+submissions_today = lb_df[
+    (lb_df["team_id"] == team_id) &
+    (lb_df["timestamp"].str.startswith(today))
+]
+remaining_submissions = 2 - len(submissions_today)
+
+st.markdown(f"**Logged in as:** `{team_id}`")
+st.markdown(f"**Remaining submissions today:** {remaining_submissions}")
+
+# Upload and submit
+uploaded_file = st.file_uploader("Upload CSV prediction", type="csv")
+
+if uploaded_file and remaining_submissions > 0:
+    # Safe filename
+    safe_time = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+    filename = f"{team_id}_{safe_time}.csv"
+    filepath = os.path.join("uploads", filename)
     os.makedirs("uploads", exist_ok=True)
-    filepath = os.path.join("uploads", uploaded_file.name)
+
     with open(filepath, "wb") as f:
         f.write(uploaded_file.read())
 
-    # Evaluate and handle errors
     try:
         score = evaluate_prediction(filepath)
-        st.success(f"✅ Your score: {score:.4f}")
+        st.success(f"Score: {score:.4f}")
 
-        # Input name for leaderboard
-        name = st.text_input("Enter your name for the leaderboard:")
-        if st.button("Submit score to leaderboard") and name:
-            leaderboard_file = "leaderboard.csv"
-            if os.path.exists(leaderboard_file):
-                lb_df = pd.read_csv(leaderboard_file)
-            else:
-                lb_df = pd.DataFrame(columns=["name", "score"])
-
-            new_entry = pd.DataFrame({"name": [name], "score": [score]})
+        if st.button("Submit to leaderboard"):
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            new_entry = pd.DataFrame({
+                "team_id": [team_id],
+                "score": [score],
+                "timestamp": [timestamp]
+            })
             lb_df = pd.concat([lb_df, new_entry], ignore_index=True)
             lb_df.to_csv(leaderboard_file, index=False)
-            st.success("🏅 Submitted to leaderboard!")
+            st.success("🎉 Submission recorded!")
 
     except EvaluationError as e:
-        st.error(f"❌ Submission error: {e}")
+        st.error(f"Submission error: {e}")
 
-# Show leaderboard
-leaderboard_file = "leaderboard.csv"
-if os.path.exists(leaderboard_file):
-    st.subheader("🏆 Leaderboard")
-    leaderboard = pd.read_csv(leaderboard_file).sort_values(by="score", ascending=False).reset_index(drop=True)
-    st.dataframe(leaderboard)
+elif uploaded_file and remaining_submissions <= 0:
+    st.error("You have reached the submission limit for today (2 submissions).")
+
+# Leaderboard
+st.subheader("Leaderboard")
+if not lb_df.empty:
+    lb_df = lb_df.sort_values(by="score", ascending=False).reset_index(drop=True)
+    st.dataframe(lb_df)
+else:
+    st.info("No submissions yet.")
