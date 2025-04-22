@@ -90,7 +90,6 @@ if uploaded_file and remaining_submissions > 0:
             lb_df = pd.concat([lb_df, new_entry], ignore_index=True)
             lb_df.to_csv(leaderboard_file, index=False)
             st.success("Submission recorded!")
-            st.experimental_rerun()
 
     except EvaluationError as e:
         st.error(f"Submission error: {e}")
