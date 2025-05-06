@@ -3,6 +3,27 @@ import pandas as pd
 import os
 from datetime import datetime
 from evaluate import evaluate_prediction, EvaluationError
+import traceback
+
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+def get_worksheet():
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], scope)
+    client = gspread.authorize(creds)
+    spreadsheet_id = st.secrets["gsheet"]["spreadsheet_id"]
+    return client.open_by_key(spreadsheet_id).sheet1
+
+def load_leaderboard():
+    sheet = get_worksheet()
+    records = sheet.get_all_records()
+    return pd.DataFrame(records)
+
+def append_submission(team_name, score):
+    sheet = get_worksheet()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    sheet.append_row([team_name, score, timestamp])
 
 def load_teams_from_secrets():
     secrets = st.secrets["teams"]
@@ -10,7 +31,6 @@ def load_teams_from_secrets():
 
 teams_dict = load_teams_from_secrets()
 
-# Streamlit session state for login
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.team_name = None
@@ -22,7 +42,6 @@ def login(team_id, password):
     else:
         st.error("Invalid team ID or password.")
 
-# Login form
 if not st.session_state.logged_in:
     st.title("Team Login")
     team_id = st.text_input("Team ID")
@@ -31,29 +50,20 @@ if not st.session_state.logged_in:
         login(team_id, password)
     st.stop()
 
-# File to store full submission history
-leaderboard_file = "leaderboard.csv"
-
-# Load or initialize leaderboard
-if os.path.exists(leaderboard_file):
-    lb_df = pd.read_csv(leaderboard_file)
-    required_cols = {"Team Name", "Score", "Submission Date"}
-    if not required_cols.issubset(lb_df.columns):
-        lb_df = pd.DataFrame(columns=["Team Name", "Score", "Submission Date"])
-else:
+try:
+    lb_df = load_leaderboard()
+except Exception as e:
+    st.error("Failed to load leaderboard.")
+    st.text(traceback.format_exc())
     lb_df = pd.DataFrame(columns=["Team Name", "Score", "Submission Date"])
 
-# Page title and instructions
 st.title("Graded Exercise 3")
-st.markdown(
-    """
-    This is the leaderboard for Graded Exercise 3.  
-    You are allowed to submit only twice per day.  
-    The evaluation metric is F1 score.
-    """
-)
+st.markdown("""
+This is the leaderboard for Graded Exercise 3.  
+You are allowed to submit only twice per day.  
+The evaluation metric is F1 score.
+""")
 
-# Submission section
 today = datetime.now().strftime("%Y-%m-%d")
 team_name = st.session_state.team_name
 submissions_today = lb_df[
@@ -67,7 +77,7 @@ st.markdown(f"**Logged in as:** `{team_name}`")
 uploaded_file = st.file_uploader("Upload CSV prediction", type="csv")
 
 if uploaded_file and remaining_submissions > 0:
-    # Safe filename
+    # Save uploaded file (optional - not persistent)
     safe_time = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     filename = f"{team_name}_{safe_time}.csv"
     filepath = os.path.join("uploads", filename)
@@ -81,14 +91,7 @@ if uploaded_file and remaining_submissions > 0:
         st.success(f"Score: {score:.4f}")
 
         if st.button("Submit to leaderboard"):
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            new_entry = pd.DataFrame({
-                "Team Name": [team_name],
-                "Score": [score],
-                "Submission Date": [timestamp]
-            })
-            lb_df = pd.concat([lb_df, new_entry], ignore_index=True)
-            lb_df.to_csv(leaderboard_file, index=False)
+            append_submission(team_name, score)
             st.success("Submission recorded!")
 
     except EvaluationError as e:
@@ -97,15 +100,11 @@ if uploaded_file and remaining_submissions > 0:
 elif uploaded_file and remaining_submissions <= 0:
     st.error("You have reached the submission limit for today (2 submissions).")
 
-# Display full leaderboard (all submissions)
+# === Display leaderboard ===
 st.subheader("Leaderboard")
 
 if not lb_df.empty:
-    # Add Place column: sort all submissions from highest to lowest score
-    all_submissions_sorted = (
-        lb_df.sort_values("Score", ascending=False)
-        .reset_index(drop=True)
-    )
+    all_submissions_sorted = lb_df.sort_values("Score", ascending=False).reset_index(drop=True)
     all_submissions_sorted.insert(0, "Place", range(1, len(all_submissions_sorted) + 1))
     st.dataframe(all_submissions_sorted.style.hide(axis="index"), use_container_width=True)
 else:
